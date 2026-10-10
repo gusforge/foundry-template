@@ -991,6 +991,9 @@ echo "done. next: mvn -B verify"
   `DATETIME(3)` 精度（毫秒原样往返、超出毫秒的位被丢弃且误差不超过 1ms）与时区行为
   （三种 JVM 时区下 `LocalDateTime` 不被平移，审计字段跟随 JVM 默认时区）也已覆盖。
   限制：没有对"驱动平移了时间"这类故障做过变异验证，结论来自断言通过。
+- **CI 已加 `docker build` 与非 root 检查**，首次即通过：镜像内 `dependency:go-offline`
+  在多模块下可用（27s），`mvn package` 打出可执行 jar 并拷入运行阶段，容器内 `id -u` 为 100。
+  （曾预判多模块下 `go-offline` 会因找不到兄弟模块而失败，实际没有，预判有误。）
 
 ### 11.2 偏差与踩坑
 
@@ -1009,7 +1012,9 @@ echo "done. next: mvn -B verify"
 ### 11.3 仍未验证
 
 - `Application.main` 里设置 UTC 的那一行没有测试守住：删掉它，所有现有测试仍会通过。
-- `docker compose up` 与 `docker build`（本机无 Docker，CI 也没有执行这两步）。
+- `docker compose up`（本机无 Docker，CI 没有执行）。
+- 镜像能构建且容器内非 root，但**没有验证镜像能启动并正常服务**：启动需要 MySQL，
+  CI 里只做了 `docker build` 和 `id -u`。
 - Jackson 3 下 `spring.jackson.*` 各属性的适用性。
 - 一次 `mvn verify` 曾显示 dao 模块耗时 26 分钟；单独重跑 6.5 秒，**无法复现**，
   原因不明（怀疑是机器挂起），记录在此以备再次出现时对照。
