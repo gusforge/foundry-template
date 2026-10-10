@@ -36,8 +36,8 @@
 | Spring Boot | **4.1.1** | 3.5.x |
 | MyBatis-Plus | `mybatis-plus-spring-boot4-starter` **3.5.17** + `mybatis-plus-jsqlparser` 3.5.17 | — |
 | springdoc | `springdoc-openapi-starter-webmvc-ui` **3.1.1** | — |
-| Testcontainers | **2.0.5**（⚠ 未验证，见下） | — |
-| ArchUnit | `archunit-junit5` **1.5.1**（⚠ 未验证） | — |
+| Testcontainers | **2.0.5**（已在 CI 的真实 MySQL 8.4 上验证） | — |
+| ArchUnit | `archunit-junit5` **1.5.1**（已验证） | — |
 | Spring Cloud Alibaba | 2025.1.x（仅第 5 步引入） | — |
 
 **已验证（2026-10-10）**：在全新本地仓库、仅 Maven Central 的条件下（510 个依赖全部来自
@@ -56,14 +56,17 @@
 5. Boot 4 切到 Jackson 3（groupId `tools.jackson`），直接依赖 `com.fasterxml.jackson`
    的第三方库仍是潜在风险点。冒烟里没有引入这类库，所以以后加依赖时要留意。
 
-**尚未验证（本机无 Docker）**：
+**Testcontainers 2.x 已验证**：artifact 与类名与 1.x 不同（`testcontainers-mysql`、
+`testcontainers-junit-jupiter`、`org.testcontainers.mysql.MySQLContainer` 且非泛型），
+第 6 节的示例按 2.x 写，已在 GitHub Actions 的 ubuntu runner 上用真实 MySQL 8.4 跑通
+（`DemoRepositoryIT` 2 项，`Skipped: 0`）。ArchUnit 1.5.1 与 Spotless 3.10.4 也已随
+`mvn verify` 跑通。
 
-- Testcontainers 2.x 的 artifact 与类名与 1.x 不同（如 `testcontainers-mysql`、
-  `testcontainers-junit-jupiter`、`org.testcontainers.mysql.MySQLContainer`），
-  第 6 节的示例按 2.x 写，**需要在有 Docker 的环境跑一遍确认**。
-- 冒烟用的是 H2 的 MySQL 模式，只验证库兼容性。逻辑删除与唯一索引的冲突、
-  `DATETIME(3)` 精度、时区行为等 MySQL 方言问题仍需在真实 MySQL 上验证。
-- ArchUnit 1.5.1 与 Spotless 3.x 的配置未跑过。
+**仍未验证**：
+
+- 冒烟用的是 H2 的 MySQL 模式，只验证库兼容性。CI 里的真实 MySQL 只覆盖了审计字段填充
+  与逻辑删除可见性；逻辑删除与唯一索引的冲突、`DATETIME(3)` 精度、时区行为
+  **目前没有测试**，仍需补。
 
 Boot 3.5 的 OSS 支持已于 2026-06 结束，仅作为万一出现无法绕开的生态问题时的回退，
 回退即技术债，需要记账。
@@ -754,7 +757,7 @@ class DemoServiceImplTest {
 
 ```java
 // web 层：只起 MVC 切片，验证异常 → HTTP 状态码 + 响应体契约
-// ⚠ Boot 4 起 @WebMvcTest 在 org.springframework.boot.webmvc.test.autoconfigure 包，需依赖 spring-boot-starter-webmvc-test（未验证）
+// Boot 4 起 @WebMvcTest 在 org.springframework.boot.webmvc.test.autoconfigure 包，需依赖 spring-boot-starter-webmvc-test（已验证）
 @WebMvcTest(DemoController.class)
 class DemoControllerTest {
     @Autowired MockMvc mvc;
@@ -779,7 +782,7 @@ class DemoControllerTest {
 abstract class AbstractDbIT {
     @Container
     @ServiceConnection                     // 需 spring-boot-testcontainers；自动注入数据源，无需 @DynamicPropertySource
-    // ⚠ Testcontainers 2.x：类在 org.testcontainers.mysql 包且不再带泛型（未验证，需有 Docker 的环境跑一遍）
+    // Testcontainers 2.x：类在 org.testcontainers.mysql 包且不再带泛型（已在 CI 验证）
     static final MySQLContainer MYSQL = new MySQLContainer("mysql:8.4")
             .withInitScript("db/migration/V1__init.sql");
 }
@@ -969,9 +972,11 @@ echo "done. next: mvn -B verify"
 - 全新本地仓库 + 仅 Maven Central，`mvn verify` 通过：service 3、web 6、ArchUnit 4、
   端到端冒烟 6，共 19 项。
 - 对 `init.sh` 的产物（改名为 `com.example.shop.order`）做完整构建，同样通过。
-- **未执行**：`DemoRepositoryIT`（2 项）。它能编译，也被 failsafe 发现，但本机无 Docker，
-  运行时被 `disabledWithoutDocker` 跳过。Testcontainers 2.x 的 `MySQLContainer`
-  （`org.testcontainers.mysql`、非泛型）仅验证了**编译通过**，MySQL 方言行为仍未验证。
+- 本机无 Docker：`DemoRepositoryIT`（2 项）被 `disabledWithoutDocker` 跳过，本机共 19 项。
+- **GitHub Actions 首次运行（ubuntu runner，有 Docker）全部通过，共 21 项**：
+  `DemoRepositoryIT` 2 项真实跑在 MySQL 8.4 容器上，`Skipped: 0`，
+  所以 Testcontainers 2.x 的写法已确认可用。它验证了 `V1__init.sql` 能在 MySQL 上执行、
+  审计字段自动填充、逻辑删除后查不到；**没有**覆盖唯一索引冲突、`DATETIME(3)` 精度、时区。
 
 ### 11.2 偏差与踩坑
 
@@ -989,9 +994,8 @@ echo "done. next: mvn -B verify"
 
 ### 11.3 仍未验证
 
-- MySQL 方言：逻辑删除与唯一索引冲突、`DATETIME(3)` 精度、时区行为。
-- `docker compose up` 与 `docker build`（本机无 Docker）。
-- GitHub Actions 的 CI（尚未推送）。
+- MySQL 方言：逻辑删除与唯一索引冲突、`DATETIME(3)` 精度、时区行为（没有测试覆盖）。
+- `docker compose up` 与 `docker build`（本机无 Docker，CI 也没有执行这两步）。
 - Jackson 3 下 `spring.jackson.*` 各属性的适用性。
 - 一次 `mvn verify` 曾显示 dao 模块耗时 26 分钟；单独重跑 6.5 秒，**无法复现**，
   原因不明（怀疑是机器挂起），记录在此以备再次出现时对照。
