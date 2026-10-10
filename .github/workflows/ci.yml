@@ -18,3 +18,12 @@ jobs:
       # spotless:check + 单测 + ArchUnit + 端到端冒烟 + Testcontainers 集成测试
       # ubuntu runner 预装 Docker，DemoRepositoryIT 会真正运行
       - run: mvn -B verify
+
+      # 验证 Dockerfile 能构建出镜像，并且容器内不是 root 运行
+      - name: Build Docker image
+        run: docker build -t foundry-template:ci .
+      - name: Image runs as non-root
+        run: |
+          uid=$(docker run --rm --entrypoint id foundry-template:ci -u)
+          echo "container uid=$uid"
+          test "$uid" != "0"
