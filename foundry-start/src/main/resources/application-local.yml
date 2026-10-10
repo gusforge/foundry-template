@@ -1,0 +1,14 @@
+spring:
+  datasource:
+    # 只对 docker-compose 起的本地容器有效；生产配置一律走环境变量或配置中心
+    url: jdbc:mysql://localhost:3306/demo?serverTimezone=UTC&characterEncoding=utf8&useSSL=false
+    username: root
+    password: ${DB_PASSWORD:root}
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+logging:
+  level:
+    io.github.gusforge.foundry: DEBUG

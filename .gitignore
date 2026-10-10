@@ -1,0 +1,9 @@
+target/
+*.iml
+.idea/
+.vscode/
+.DS_Store
+*.log
+*.bak
+.env
+application-*-secret.yml
