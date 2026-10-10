@@ -63,9 +63,9 @@
 `mvn verify` 跑通。
 
 **仍未验证**：
-- 冒烟用的是 H2 的 MySQL 模式，只验证库兼容性。CI 里的真实 MySQL 覆盖了审计字段填充、
-  逻辑删除可见性，以及逻辑删除与唯一索引 `uk_name_deleted` 的三种交互（见 11.1）；
-  `DATETIME(3)` 精度、时区行为**目前没有测试**，仍需补。
+- 冒烟用的是 H2 的 MySQL 模式，只验证库兼容性。MySQL 方言相关的行为由 CI 里真实 MySQL 上的
+  `DemoRepositoryIT` 覆盖：审计字段填充、逻辑删除可见性、逻辑删除与唯一索引 `uk_name_deleted`
+  的三种交互、`DATETIME(3)` 精度、时区行为（见 11.1）。目前没有已知的、未被测试覆盖的 MySQL 方言项。
 
 Boot 3.5 的 OSS 支持已于 2026-06 结束，仅作为万一出现无法绕开的生态问题时的回退，
 回退即技术债，需要记账。
@@ -596,6 +596,17 @@ public static void main(String[] args) {
 > 更彻底的做法是对外契约统一用 `Instant`（带时区语义），`LocalDateTime` 只在
 > DB 映射层出现。这一步先保持 `LocalDateTime` 与原设计一致，但记为待评估项。
 
+**在真实 MySQL 8.4 上的验证结果**（`DemoRepositoryIT`，见 11.1）：
+
+- `LocalDateTime` ↔ `DATETIME(3)` 不会被驱动按时区平移。UTC、Asia/Shanghai、America/New_York
+  三种 JVM 时区下，包括纽约夏令时空档（03-08 02:30）与重叠（11-01 01:30）都原样往返。
+  所以"换时区会让存量时间错位"的担忧，对这条 `LocalDateTime` 路径不成立。
+- **审计字段由 `LocalDateTime.now()` 生成，跟随 JVM 默认时区**：JVM 为 Shanghai 时落库值与 UTC
+  相差约 8 小时。因此 `Application.main` 里先设 UTC 不是可选项，否则不同时区机器上的实例会写入
+  不同的墙上时间。这条保护目前只靠 `main` 里的一行代码，没有测试守住它。
+- 超出毫秒的位会被丢弃，与原值相差不超过 1ms；是四舍五入还是截断取决于驱动与 `sql_mode`，
+  测试刻意不断言这一点。
+
 ---
 
 ## 4. 配置文件
@@ -973,11 +984,13 @@ echo "done. next: mvn -B verify"
 - 对 `init.sh` 的产物（改名为 `com.example.shop.order`）做完整构建，同样通过。
 - 本机无 Docker：`DemoRepositoryIT`（2 项）被 `disabledWithoutDocker` 跳过，本机共 19 项。
 - **GitHub Actions 首次运行（ubuntu runner，有 Docker）全部通过，共 21 项**：
-  `DemoRepositoryIT` 真实跑在 MySQL 8.4 容器上，`Skipped: 0`（首次 2 项，补唯一索引用例后 5 项），
+  `DemoRepositoryIT` 真实跑在 MySQL 8.4 容器上，`Skipped: 0`（首次 2 项，补唯一索引用例后 5 项，补精度与时区后共 13 次执行），
   所以 Testcontainers 2.x 的写法已确认可用。它验证了 `V1__init.sql` 能在 MySQL 上执行、
   审计字段自动填充、逻辑删除后查不到，并固定了唯一索引与逻辑删除的行为：活跃行同名重复被拒、
   软删后可重建同名、**同名第二次软删会撞唯一键（已知限制，用例锁定当前行为）**；
-  **没有**覆盖 `DATETIME(3)` 精度、时区。
+  `DATETIME(3)` 精度（毫秒原样往返、超出毫秒的位被丢弃且误差不超过 1ms）与时区行为
+  （三种 JVM 时区下 `LocalDateTime` 不被平移，审计字段跟随 JVM 默认时区）也已覆盖。
+  限制：没有对"驱动平移了时间"这类故障做过变异验证，结论来自断言通过。
 
 ### 11.2 偏差与踩坑
 
@@ -995,7 +1008,7 @@ echo "done. next: mvn -B verify"
 
 ### 11.3 仍未验证
 
-- MySQL 方言：`DATETIME(3)` 精度、时区行为（没有测试覆盖）。
+- `Application.main` 里设置 UTC 的那一行没有测试守住：删掉它，所有现有测试仍会通过。
 - `docker compose up` 与 `docker build`（本机无 Docker，CI 也没有执行这两步）。
 - Jackson 3 下 `spring.jackson.*` 各属性的适用性。
 - 一次 `mvn verify` 曾显示 dao 模块耗时 26 分钟；单独重跑 6.5 秒，**无法复现**，
